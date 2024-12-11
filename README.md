@@ -1,5 +1,12 @@
-# BookNLP
+# Book2: JSon of NLP
+The sequel (but if I made a sequel pun, it would confuse people who would expect SQL)
 
+This is a fork of BookNLP.  The only output BookNLP does with the full text is an html highly annotated version, and parsing it back apart is more work than just adding a true json output. (BookNLP does do json, in the .book output, but that doesn't contain the text, so... JSon of NLP.
+
+More changes might happen, but this first effort is so using the well parsed data is easier.
+
+
+Original README follows...
 BookNLP is a natural language processing pipeline that scales to books and other long documents (in English), including:
 
 * Part-of-speech tagging

@@ -19,7 +19,7 @@ class QuotationAttribution:
 
         self.model = BERTSpeakerID(base_model=base_model)
         # self.model.load_state_dict(torch.load(modelFile, map_location=device))
-        state_dict = torch.load(modelFile, map_location=device)
+        state_dict = torch.load(modelFile, map_location=device, weights_only=True)
         del state_dict["bert.embeddings.position_ids"]
         self.model.load_state_dict(state_dict)
         self.model.to(device)
@@ -44,10 +44,10 @@ class QuotationAttribution:
 
         x_batches, m_batches, y_batches, o_batches = self.model.get_batches(texts, metas)
 
-        all_preds = {}
+        # all_preds = {}
         quote_chain = {}
 
-        idd = 0
+        # idd = 0
         prediction_id = 0
 
         for x1, m1, y1, o1 in zip(x_batches, m_batches, y_batches, o_batches):
@@ -61,7 +61,7 @@ class QuotationAttribution:
                 prediction = pred[0]
                 quote_start, quote_end = quotes[global_quote_id]
                 sent = orig[idx]
-                predval = y1["eid"][idx][prediction]
+                # predval = y1["eid"][idx][prediction]
 
                 if prediction >= len(meta[idx][1]):
                     prediction = torch.argmax(y_pred[idx][:len(meta[idx][1])])
@@ -78,6 +78,7 @@ class QuotationAttribution:
                     attributions[prediction_id] = entity_by_position[g_start, g_end]
                 else:
                     print("Cannot resolve quotation")
+                    print(f"debug: g_start:{g_start} g_end:{g_end}")
 
                 ent_start, ent_end, lab, ent_eid = meta[idx][1][prediction]
 
@@ -120,7 +121,7 @@ class QuotationAttribution:
 
         entities_by_start = {}
         for start, end, cat, text in entities:
-            ner_prop = cat.split("_")[0]
+            # ner_prop = cat.split("_")[0]
             ner_type = cat.split("_")[1]
 
             if ner_type != "PER":
@@ -272,8 +273,8 @@ class QuotationAttribution:
                         continue
 
                     labels.append((int(s), int(e+1), 0, eid))
-                    adjusted_s = reverse_map[s]
-                    adjusted_e = reverse_map[e]
+                    # adjusted_s = reverse_map[s]
+                    # adjusted_e = reverse_map[e]
 
                     g_positions.append((global_start, global_end))
 

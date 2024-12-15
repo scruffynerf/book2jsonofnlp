@@ -3,6 +3,7 @@ import json
 import sys
 import spacy
 import copy
+# from pprint import pprint
 from os.path import join
 from collections import Counter
 from html import escape
@@ -316,6 +317,66 @@ class EnglishBookNLP:
 
     def process(self, filename, outFolder, idd):
 
+        def process_paragraph(paragraph_tokens, start_index):
+            entries = []
+            current_entry = {
+                "text": "",
+                "speaker_id": paragraph_tokens[0]["speaker_id"],
+                "speaker_name": paragraph_tokens[0]["speaker_name"],
+                "index": start_index
+            }
+
+            for token in paragraph_tokens:
+                token_text = token["text"]
+
+                # Handle quote merging
+                if token_text in {"“", "”", '"'}:
+                    if current_entry["text"]:
+                        # Attach quotes to the current entry's text
+                        current_entry["text"] += token_text
+                    else:
+                        # Skip isolated quotes
+                        continue
+
+                # Handle punctuation merging
+                elif token_text in {".", ",", "!", "?"}:
+                    # Append punctuation without a preceding space
+                    if current_entry["text"] and current_entry["text"][-1] != " ":
+                        current_entry["text"] += token_text
+                    else:
+                        # Handle isolated punctuation cases (unlikely)
+                        current_entry["text"] += token_text.strip()
+
+                # Handle speaker changes
+                elif token["speaker_id"] != current_entry["speaker_id"] or token["speaker_name"] != current_entry["speaker_name"]:
+                    # Clean up the current entry before appending
+                    current_entry["text"] = current_entry["text"].rstrip('”"')
+                    entries.append(current_entry)
+                    start_index += 1
+                    current_entry = {
+                        "text": token_text,
+                        "speaker_id": token["speaker_id"],
+                        "speaker_name": token["speaker_name"],
+                        "index": start_index
+                    }
+
+                else:
+                    # Append token text to the current entry with proper spacing
+                    if current_entry["text"]:
+                        current_text = current_entry["text"]
+                        print(f"debugging: current={current_text} \nadding={token_text}")
+                        if current_text.endswith(("“", " ", '"')) or token_text.startswith("'"):
+                            pass
+                        else:
+                            current_entry["text"] += " "
+                    current_entry["text"] += token_text
+
+            # Clean and add the last entry
+            current_entry["text"] = current_entry["text"].rstrip('”"')  # Remove stray trailing quotes
+            entries.append(current_entry)
+
+            return entries
+
         with torch.no_grad():
 
             start_time = time.time()
@@ -431,7 +492,7 @@ class EnglishBookNLP:
 
                     chardata = self.get_syntax(tokens, entities, assignments, genders)
                     with open(join(outFolder, "%s.book" % (idd)), "w", encoding="utf-8") as out:
-                        json.dump(chardata, out)
+                        json.dump(chardata, out, sort_keys=True, indent=4, ensure_ascii=False)
 
                 if self.doEntities:
                     # Write entities and coref
@@ -575,50 +636,106 @@ class EnglishBookNLP:
 
                         out.write("</html>")
 
-                        # Initialize the JSON structure
-                        output_json = {
-                            "speakers": {},  # Speakers will be populated below
-                            "text": []
+                    # Assuming `chardata`, `entities`, `assignments`, `quotes`, `attributed_quotations`, `tokens`, and `names` are already defined.
+
+                    # debugging
+
+                    print("\n\nEntities debug")
+                    # pprint(entities)
+                    json_output_path = join(outFolder, f"{idd}.entities.json")
+                    with open(json_output_path, "w", encoding="utf-8") as out:
+                        json.dump(entities, out, sort_keys=True, indent=4, ensure_ascii=False)
+
+                    print("\n\nNames debug")
+                    # pprint(names)
+                    json_output_path = join(outFolder, f"{idd}.names.json")
+                    with open(json_output_path, "w", encoding="utf-8") as out:
+                        json.dump(names, out, sort_keys=True, indent=4, ensure_ascii=False)
+
+                    output = {
+                        "characters": [],
+                        "text": []
+                    }
+
+                    # Characters Section
+                    for character in chardata["characters"]:
+                        char_id = character["id"]
+
+                        # proper_names = character["mentions"]["proper"]
+                        # if len(proper_names) > 0 or char_id == 0:  # Narrator or named character
+
+                        if char_id == 0:
+                            json_name = "NARRATOR"
+                        else:
+                            json_name = names[char_id].most_common(1)[0][0]
+
+                        #        json_names = []
+                        #        for name in proper_names:
+                        #            formatted_name = name["n"].title()
+                        #            if formatted_name not in names:
+                        #                json_names.append(formatted_name)
+                        char_entry = {
+                            "id": char_id,
+                            "name": json_name.title()
                         }
+                        output["characters"].append(char_entry)
 
-                        # Build the speaker index from chardata
-                        for character in chardata["characters"]:
-                            char_id = character["id"]
-                            proper_names = [name["n"] for name in character["mentions"]["proper"]]
-                            main_name = proper_names[0] if proper_names else "Narrator"
-                            output_json["speakers"][char_id] = main_name
+                    # Text Section
+                    lastP = None
+                    index = 1
+                    paragraph_text = []
 
-                        # Process tokens to generate text entries
-                        line_counter = 1
-                        # last_paragraph = None
+                    for idx, token in enumerate(tokens):
+                        # Detect paragraph breaks
+                        if token.paragraph_id != lastP:
+                            if paragraph_text:
+                                # Process the accumulated paragraph
+                                paragraph_json = process_paragraph(paragraph_text, index)
+                                output["text"].extend(paragraph_json)
+                                index += len(paragraph_json)
+                                paragraph_text = []
+                                paragraph_json = []
+                            lastP = token.paragraph_id
 
-                        for idx in range(len(tokens)):
-                            token = tokens[idx]
-                            speaker = "Narrator"  # Default speaker
-                            # paragraph_id = token.paragraph_id
+                        # Accumulate tokens for current paragraph
+                        speaker_id = 0  # Default to Narrator
+                        speaker_name = "Narrator"
 
-                            # Check for attributed speaker in quotes
-                            if idx in [start for start, _ in quotes]:
-                                mention_id = attributed_quotations[quotes.index((idx, idx))]
+                        for quote_idx, (start, end) in enumerate(quotes):
+                            if start <= idx < end:
+                                mention_id = attributed_quotations[quote_idx]
                                 if mention_id is not None:
                                     speaker_id = assignments[mention_id]
-                                    speaker = output_json["speakers"].get(speaker_id, "Narrator")
+                                    if speaker_id == 0:
+                                        speaker_name = "NARRATOR"
+                                    else:
+                                        if names.get(speaker_id):
+                                            speaker_name = names[speaker_id].most_common(1)[0][0]
+                                        else:
+                                            speaker_name = f"Character {speaker_id}"
 
-                            # Add the token as a JSON entry
-                            output_json["text"].append({
-                                "line": line_counter,
-                                "text": token.text,
-                                "speaker": speaker
-                            })
+                                    # Improved fallback logic for speaker names
+                                    # if speaker_id in names and names[speaker_id]:
+                                    #    speaker_name = names[speaker_id].most_common(1)[0][0]
+                                    # elif speaker_id in chardata["characters"]:
+                                    #    speaker_name = f"Character {speaker_id}"
+                                    # else:
+                                    #    speaker_name = "Narrator (Unknown)"
 
-                            # Update line counter and paragraph tracking
-                            line_counter += 1
-                            # last_paragraph = paragraph_id
+                        paragraph_text.append({
+                            "text": token.text,
+                            "speaker_id": speaker_id,
+                            "speaker_name": speaker_name.title()
+                        })
 
-                        # Write the JSON to a file
-                        json_output_path = join(outFolder, f"{idd}.book.json")
-                        with open(json_output_path, "w", encoding="utf-8") as json_file:
-                            json.dump(output_json, json_file, ensure_ascii=False, indent=4)
+                    # Process the final paragraph if any
+                    if paragraph_text:
+                        output["text"].extend(process_paragraph(paragraph_text, index))
+
+                    # Write output to JSON file
+                    json_output_path = join(outFolder, f"{idd}.book.json")
+                    with open(json_output_path, "w", encoding="utf-8") as out:
+                        json.dump(output, out, indent=4, ensure_ascii=False)
 
                 print("--- TOTAL (excl. startup): %.3f seconds ---, %s words" % (time.time() - originalTime, len(tokens)))
                 return time.time() - originalTime

@@ -21,7 +21,7 @@ class LitBankEntityTagger:
 
         self.model.to(device)
         # self.model.load_state_dict(torch.load(model_file, map_location=device))
-        state_dict = torch.load(model_file, map_location=device)
+        state_dict = torch.load(model_file, map_location=device, weights_only=True)
         del state_dict["bert.embeddings.position_ids"]
         self.model.load_state_dict(state_dict)
         wnsFile = pkg_resources.resource_filename(__name__, "data/wordnet.first.sense")

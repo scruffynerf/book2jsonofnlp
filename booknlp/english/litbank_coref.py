@@ -20,7 +20,7 @@ class LitBankCoref:
 
         self.model = BERTCorefTagger(gender_cats=gender_cats, freeze_bert=True, base_model=base_model, pronominalCorefOnly=pronominalCorefOnly)
         # self.model.load_state_dict(torch.load(modelFile, map_location=device))
-        state_dict = torch.load(modelFile, map_location=device)
+        state_dict = torch.load(modelFile, map_location=device, weights_only=True)
         del state_dict["bert.embeddings.position_ids"]
         self.model.load_state_dict(state_dict)
         self.model.to(device)
@@ -148,7 +148,7 @@ class LitBankCoref:
 
         sents = o_sentences
 
-        lastS = -1
+        # lastS = -1
 
         entities = sorted(entities)
 
@@ -161,7 +161,7 @@ class LitBankCoref:
             # if sent_id < lastS:
             #     print(sent_id, lastS, "non-monotonic!")
 
-            lastS = sent_id
+            # lastS = sent_id
 
             inQuote = 0
             if tokens[start].inQuote or tokens[end].inQuote:
